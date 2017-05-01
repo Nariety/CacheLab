@@ -30,7 +30,7 @@ void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
 		int blockSize1 = 8, blockSize3 = 16; // For the case N ==64, blocksize =4 is the best
 		// variables used to optimize the case N == 64
 		// a1,a2,a3 for diagonals, a4,a5,a6 exploits spatial locality
-		int a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16;
+		int a1,a2,a3,a4,a5,a6;//,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16;
 
 
 		if (N == 32) {
