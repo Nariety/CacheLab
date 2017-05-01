@@ -25,137 +25,124 @@ int is_transpose(int M, int N, int A[N][M], int B[M][N]);
 char transpose_submit_desc[] = "Transpose submission";
 void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
 
-		int diagonal = 0;
-		int temp = 0;
-		int blockSize1 = 8, blockSize3 = 16; // For the case N ==64, blocksize =4 is the best
-		// variables used to optimize the case N == 64
-		// a1,a2,a3 for diagonals, a4,a5,a6 exploits spatial locality
-		int a1,a2,a3,a4,a5,a6;//,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16;
+	int diagonal = 0;
+	int temp = 0;
+	int blockSize1 = 8, blockSize3 = 16; // For the case N ==64, blocksize =4 is the best
 
-
-		if (N == 32) {
-			for (int row = 0; row < N; row += blockSize1) {
-				for (int column = 0; column < N; column += blockSize1) {
-					for (int i = row; i < row + blockSize1; i++) {
-						for (int j = column; j < column + blockSize1; j++) {
-							if (i != j) {
-								B[j][i] = A[i][j];
-							}
-							else {
-								temp = A[i][j];
-								diagonal = i;
-							}
+	// when N == 32
+	if (N == 32) {
+		// for each row
+		for (int row = 0; row < N; row += blockSize1) {
+			// for each column
+			for (int column = 0; column < N; column += blockSize1) {
+				// for each row of the block
+				for (int i = row; i < row + blockSize1; i++) {
+					// for each column of the block
+					for (int j = column; j < column + blockSize1; j++) {
+						// when i != j, stores A[i][j] into B[j][i]
+						if (i != j) {
+							B[j][i] = A[i][j];
 						}
-						if (row == column) {
-							B[diagonal][diagonal] = temp;
+						// else stores A[i][j] into temp and i into diagonal for later use
+						else {
+							temp = A[i][j];
+							diagonal = i;
 						}
+					}
+					// when row == column
+					// stores temp into B[diagonal[diagonal] to avoid some misses
+					if (row == column) {
+						B[diagonal][diagonal] = temp;
 					}
 				}
 			}
 		}
-		// In order to increase the efficiency, we only used two for loops for this case
-		// and used local variables to manually store and load.
-		else if (N == 64) {
-			for (int row = 0; row < N; row += 4) {
-				for (int column = 0; column < N; column += 4) {
-			/*
-					a16 = A[row+3][column];
-					a15 = A[row+3][column+1];
-					a14 = A[row+3][column+2];
-					a13 = A[row+3][column+3];
+	}
+	// In order to increase the efficiency, we only used two for loops for this case
+	// and used local variables to manually store and load.
+	else if (N == 64) {
+		// local variables used to optimize the case N == 64
+		// a1,a2,a3,a4,a5,a6 to exploits spatial locality
+		int a1, a2, a3, a4, a5, a6;
+		for (int row = 0; row < N; row += 4) {
+			for (int column = 0; column < N; column += 4) {
+				//for each 4x4 block in matrix A
 
-					a12 = A[row+2][column];
-					a11 = A[row+2][column+1];
-					a10 = A[row+2][column+2];
-					a9 = A[row+2][column+3];
+				//stores the first row of A into a3, a4, a5, a6
+				a6 = A[row][column];
+				a5 = A[row][column + 1];
+				a4 = A[row][column + 2];
+				a3 = A[row][column + 3];
 
-					a8 = A[row+1][column];
-					a7 = A[row+1][column+1];
-					a6 = A[row+1][column+2];
-					a5 = A[row+1][column+3];
+				//stores the second row of A into a2, a1, temp, diagonal
+				a2 = A[row + 1][column];
+				a1 = A[row + 1][column + 1];
+				temp = A[row + 1][column + 2];
+				diagonal = A[row + 1][column + 3];
 
-					a4 = A[row][column];
-					a3 = A[row][column+1];
-					a2 = A[row][column+2];
-					a1 = A[row][column+3];
+				//stores the first two elements in the third row of A into blockSize1, blockSize2
+				blockSize1 = A[row + 2][column];
+				blockSize3 = A[row + 2][column + 1];
 
+				//storing the third row of B
+				B[column + 2][row + 2] = A[row + 2][column + 2];
+				B[column + 2][row] = a4;
+				B[column + 2][row + 1] = temp;
+				B[column + 2][row + 3] = A[row + 3][column + 2];
 
-					B[column][row] = a4;
-					B[column][row+1] = a8;
-					B[column][row+2] = a12;
-					B[column][row+3] = a16;
+				//stores the first two elements of A into a4, temp
+				temp = A[row + 3][column];
+				a4 = A[row + 3][column + 1];
 
-					B[column+1][row] = a3;
-					B[column+1][row+1] = a7;
-					B[column+1][row+2] = a11;
-					B[column+1][row+3] = a15;
+				//storing the last row of B
+				B[column + 3][row + 3] = A[row + 3][column + 3];
+				B[column + 3][row + 2] = A[row + 2][column + 3];
+				B[column + 3][row + 1] = diagonal;
+				B[column + 3][row] = a3;
 
-					B[column+2][row] = a2;
-					B[column+2][row+1] = a6;
-					B[column+2][row+2] = a10;
-					B[column+2][row+3] = a14;
+				//storing the second row of B
+				B[column + 1][row + 3] = a4;
+				B[column + 1][row + 2] = blockSize3;
+				B[column + 1][row + 1] = a1;
+				B[column + 1][row] = a5;
 
-					B[column+3][row] = a1;
-					B[column+3][row+1] = a5;
-					B[column+3][row+2] = a9;
-					B[column+3][row+3] = a13;
-*/ // result in 1603 misses
-
-					a6 = A[row+3][column];
-					a5 = A[row+3][column+1];
-					a4 = A[row+3][column+2];
-					a3 = A[row+3][column+3];
-
-					temp = A[row+2][column];
-					B[column][row+3] = a6;
-					a6 = A[row+2][column+1];// a6,a5,a4,a3 in use
-					a2 = A[row+2][column+2];
-					B[column+1][row+3] = a5;
-					a5 = A[row+2][column+3];
-
-					diagonal = A[row+1][column];
-					a1 = A[row+1][column+1]; //a6,a5,a4,a3,a2,a1 in use
-					blockSize3 = A[row+1][column+2];
-
-					blockSize1 = A[row+1][column+3];
-
-					B[column][row] = A[row][column];
-					B[column][row+1] = diagonal;
-					B[column][row+2] = temp;
-					B[column+1][row] = A[row][column+1];
-					B[column+1][row+1] = a1;
-					B[column+1][row+2] = a6;
-					B[column+2][row] = A[row][column+2];
-					B[column+2][row+1] = blockSize3;
-					B[column+2][row+2] = a2;
-					B[column+2][row+3] = a4;
-					B[column+3][row] = A[row][column+3];
-					B[column+3][row+1] = blockSize1;
-					B[column+3][row+2] = a5;
-					B[column+3][row+3] = a3;
-
+				//storing the first row of B
+				B[column][row + 3] = temp;
+				B[column][row + 1] = a2;
+				B[column][row + 2] = blockSize1;
+				B[column][row] = a6;
+			}
+		}
+	}
+	// for any case with non-symmetric matrix
+	else {
+		//for each row
+		for (int row = 0; row < N; row += blockSize3) {
+			//for each column
+			for (int column = 0; column < N; column += blockSize3) {
+				//for each row of the block
+				for (int i = row; (i < row + blockSize3) && (i < N); i++) {
+					//for each column of the block
+					for (int j = column; (j < column + blockSize3) && (j < M);
+							j++) {
+						// when i != j, stores A[i][j] into B[j][i]
+						if (i != j) {
+							B[j][i] = A[i][j];
+						}
+						// else stores A[i][j] into temp and i into diagonal for later use
+						else {
+							temp = A[i][j];
+							diagonal = i;
+						}
+					}
+					// when row == column
+					// stores temp into B[diagonal[diagonal] to avoid some misses
+					if (row == column) {
+						B[diagonal][diagonal] = temp;
+					}
 				}
 			}
 		}
-		// for any case with non-symmetric matrix
-		else {
-			for (int row = 0; row < N; row += blockSize3) {
-				for (int column = 0; column < N; column += blockSize3) {
-					for (int i = row; (i < row + blockSize3) && (i < N); i++) {
-						for (int j = column; (j < column + blockSize3) && (j < M); j++) {
-							if (i != j) {
-								B[j][i] = A[i][j];
-							} else {
-								temp = A[i][j];
-								diagonal = i;
-							}
-						}
-						if (row == column) {
-							B[diagonal][diagonal] = temp;
-						}
-					}
-		 		}
-			}
 	}
 }
 
@@ -236,5 +223,4 @@ int is_transpose(int M, int N, int A[N][M], int B[M][N]) {
 	}
 	return 1;
 }
-
 
